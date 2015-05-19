@@ -1,0 +1,335 @@
+<template id="x-uploader-template">
+	<style>
+		:host {
+			font-family: sans-serif;
+			display: block;
+			border: 5px dashed grey;
+			padding: 8px;
+		}
+		
+		:host #wrap p {
+			text-align: center;
+		}
+		
+		:host #file-input {
+			visibility: hidden;
+		}
+		
+		:host #files {
+			padding: 0;
+		}
+		
+		:host #files li .name {
+			position: relative;
+			display: block;
+			height: 0;
+			padding: 0 16px;
+			background-color: rgba(255, 255, 255, 1);
+			text-shadow:
+				1px 1px 0 white,
+				1px 0px 0 white,
+				0px 1px white,
+				-1px -1px 0 white,
+				-1px 0px 0 white,
+				0px -1px 0 white;
+			font-weight: bold;
+			color: rgb(66, 66, 66);
+		}
+		
+		:host #files li .name::selection {
+			text-shadow: none;
+			color: white;
+			background-color: black;
+		}
+		
+		:host #files li {
+			list-style: none;
+			text-align: center;
+			margin: 10px 0;
+			line-height: 26px;
+		}
+		
+		:host #files li progress {
+			width: 100%;
+			height: 25px;
+			opacity: 1;
+		}
+	</style>
+	<content></content>
+	<hr id="separator">
+	<div id="wrap">
+		<p>Drag and drop your files here</p>
+		<p>OR</p>
+		<p><button>Select Files</button></p>
+		<p><span id="limit-msg"></span></p>
+		<ul id="files"></ul>
+	</div>
+	
+	<input id="file-input" type="file" multiple>
+</template>
+<script>
+	var XUploader = (function() {
+		
+		var doc = document.currentScript.ownerDocument;
+		var uploaderTemplate = doc.getElementById("x-uploader-template");
+		var proto = Object.create(HTMLElement.prototype);
+		
+		function contentChanged(uploader) {
+			if(uploader.textContent == "") {
+				uploader.shadowRoot.querySelector("hr").style.display = "none";
+			} else {
+				uploader.shadowRoot.querySelector("hr").style.display = "";
+			}
+		}
+		
+		function updateUploaderType(uploader, type) {
+			var type = type || uploader.getAttribute("type");
+			if(type) {
+				uploader.shadowRoot.querySelector("#file-input").setAttribute("accept", type);
+			}
+		}
+		
+		function updateUploaderLimitsMessage(uploader) {
+			var maxsize = uploader.maxsize;
+			var maxsizeTxt = uploader.getAttribute("maxsize");
+			var type = uploader.getAttribute("type");
+			if(maxsize === undefined) {
+				return;
+			}
+			
+			var limitMsgEl = uploader.shadowRoot.querySelector("#limit-msg");
+			limitMsgEl.innerHTML = "Maximum upload file size: " + maxsizeTxt + ".";
+			
+			var typeArr = type.split("/");
+			var baseType = typeArr[0] || type;
+			var specType = typeArr[1] || "*";
+			
+			if(specType == "*") {
+				if(baseType == "image") {
+					limitMsgEl.innerHTML += "<br>Image files only.";
+				} else
+				if(baseType == "audio") {
+					limitMsgEl.innerHTML += "<br>Audio files only.";
+				} else
+				if(baseType == "video") {
+					limitMsgEl.innerHTML += "<br>Video files only.";
+				} else
+				if(baseType == "text") {
+					limitMsgEl.innerHTML += "<br>Text files only.";
+				}
+			} else {
+				if(baseType == "image") {
+					limitMsgEl.innerHTML += "<br>" + specType.toUpperCase() + " image files only.";
+				} else
+				if(baseType == "audio") {
+					limitMsgEl.innerHTML += "<br>" + specType.toUpperCase() + " audio files only.";
+				} else
+				if(baseType == "video") {
+					limitMsgEl.innerHTML += "<br>" + specType.toUpperCase() + " video files only.";
+				} else
+				if(baseType == "text") {
+					limitMsgEl.innerHTML += "<br>" + specType.toUpperCase() + " text files only.";
+				}
+			}
+		}
+		
+		proto.createdCallback = function() {
+			
+			var uploader = this;
+			
+			var OnUpload = null;
+			
+			Object.defineProperty(this, "onupload", {
+				get: function() {
+					return OnUpload;
+				},
+				set: function(val) {
+					if(OnUpload !== null) {
+						uploader.removeEventListener("upload", OnUpload);
+					}
+					
+					if(typeof val == "string") {
+						OnUpload = new Function(val);
+					} else
+					if(typeof val == "function") {
+						OnUpload = val;
+					} else {
+						OnUpload = null;
+						return;
+					}
+					
+					uploader.addEventListener("upload", OnUpload);
+				}
+			});
+			
+			var shadowRoot = this.createShadowRoot();
+			shadowRoot.appendChild(doc.importNode(uploaderTemplate.content, true));
+			
+			var buttonEl = shadowRoot.querySelector("button");
+			var inputEl = shadowRoot.querySelector("input[type=file]");
+			
+			this.ondragover = function(e) {
+				
+				return false;
+			};
+			
+			this.ondragover = function(e) {
+				e.stopPropagation();
+				e.preventDefault();
+				uploader.classList.add("drop-hover");
+				return false;
+			};
+			
+			this.ondragleave = function(e) {
+				e.stopPropagation();
+				e.preventDefault();
+				uploader.classList.remove("drop-hover");
+			};
+			
+			this.ondrop = function(e) {
+				var files = e.dataTransfer.files;
+				if(files) {
+					e.preventDefault();
+					e.stopPropagation();
+					uploader.classList.remove("drop-hover");
+					
+					files = uploader.parseFiles(files);
+					
+					if(files.length > 0) {
+						var ev = new Event("upload");
+						ev.files = files;
+						uploader.dispatchEvent(ev);
+					}
+					return false;
+				}
+			};
+			
+			inputEl.addEventListener("change", function() {
+				if(this.files) {
+					
+					var files = uploader.parseFiles(this.files);
+					
+					if(files.length > 0) {
+						var ev = new Event("upload");
+						ev.files = files;
+						uploader.dispatchEvent(ev);
+					}
+				}
+			});
+			
+			buttonEl.addEventListener("click", function(e) {
+				inputEl.click();
+			});
+			
+			updateUploaderLimitsMessage(uploader);
+			updateUploaderType(uploader, uploader.getAttribute("type"));
+			
+			this.onupload = uploader.getAttribute("onupload");
+			
+			
+			var observer = new MutationObserver(function(record) {
+				contentChanged(uploader, uploader.shadowRoot.querySelector("content"));
+			});
+			
+			observer.observe(this, {
+				characterData: true,
+				childList: true
+			});
+		};
+		
+		proto.parseFiles = function(files) {
+			var validFiles = [];
+			var maxsize = this.maxsize;
+			
+			var filesEl = this.shadowRoot.querySelector("#files");
+			
+			for(var i=0; files.length > i; i++) {
+				var file = files[i];
+				
+				if(file.size < maxsize) {
+					validFiles.push(file);
+					filesEl.innerHTML += '<li><span class="name">\''+file.name+'\'</span><progress></progress></li>';
+				} else {
+					filesEl.innerHTML += '<li class="error large"><span class="name">\''+file.name+'\'</span><span class="msg"> is too large.</span></li>';
+				}
+			}
+			
+			return validFiles;
+		}
+		
+		proto.attributeChangedCallback = function(name, oldVal, newVal) {
+			
+			switch(name) {
+			case "type":
+				updateUploaderType(this, newVal);
+				updateUploaderLimitsMessage(this);
+				break;
+			case "maxsize":
+				updateUploaderLimitsMessage(this);
+				break;
+			case "onupload":
+				this.onupload = newVal;
+				break;
+			}
+			
+		};
+		
+		var sizePrefix = {
+			'k': 1000,
+			'm': 1000000,
+			'g': 1000000000,
+			't': 1000000000000,
+			'p': 1000000000000000,
+			'e': 1000000000000000000,
+			'z': 1000000000000000000000,
+			'y': 1000000000000000000000000,
+			'K': Math.pow(1024, 1),
+			'M': Math.pow(1024, 2),
+			'G': Math.pow(1024, 3),
+			'T': Math.pow(1024, 4),
+			'P': Math.pow(1024, 5),
+			'E': Math.pow(1024, 6),
+			'Z': Math.pow(1024, 7),
+			'Y': Math.pow(1024, 8)
+		};
+		
+		Object.defineProperty(proto, "maxsize", {
+			get: function() {
+				var attrMaxsize = this.getAttribute("maxsize");
+				if(attrMaxsize) {
+					var lastChars = attrMaxsize.substr(-2);
+					var c1 = lastChars[0];
+					var c2 = lastChars[1];
+					
+					if(c1 == 'i') {
+						c1 = attrMaxsize.substr(-3)[0].toUpperCase();
+					}
+					
+					var maxsize = parseInt(attrMaxsize);
+					
+					if(sizePrefix[c1]) {
+						maxsize *= sizePrefix[c1];
+						
+						if(c2 == 'b') {
+							maxsize = parseInt(maxsize / 8);
+						}
+					} else {
+						if(sizePrefix[c2]) {
+							maxsize *= sizePrefix[c2];
+						} else
+						if(c2 == 'b') {
+							maxsize = parseInt(maxsize / 8);
+						}
+					}
+					
+					return maxsize;
+				}
+			}, set: function(val) {
+				this.setAttribute("maxsize", val);
+			}
+		});
+		
+		return document.registerElement("x-uploader", { prototype: proto });
+		
+	}());
+</script>
